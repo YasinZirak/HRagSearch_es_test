@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motorcycle search</title>
+<style>
+  :root {
+    --bg: #eef1f4; --surface: #ffffff; --ink: #1c2530; --muted: #5d6b7a;
+    --line: #d5dce3; --accent: #0f5c73; --accent-ink: #ffffff; --ok: #1d7a4a; --bad: #b3372c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12181e; --surface: #1b232b; --ink: #e7ecf0; --muted: #98a6b3;
+      --line: #2d3945; --accent: #4fb3cf; --accent-ink: #0c1a20; --ok: #5cc48c; --bad: #ee7b70;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 "Segoe UI", Tahoma, Arial, sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 20px; }
+  .row { display: flex; gap: 8px; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 12px 14px; font: inherit; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  }
+  button {
+    padding: 12px 20px; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin: 14px 0 24px; color: var(--muted); }
+  .filters input[type=number] { width: 11em; padding: 8px 10px; }
+  .filters label { display: flex; align-items: center; gap: 6px; }
+  #status { color: var(--muted); margin-bottom: 12px; }
+  #status.error { color: var(--bad); }
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; }
+  .item h2 { font-size: 1.1rem; margin: 0 0 4px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--muted); }
+  .price { color: var(--ink); font-weight: 600; }
+  .in { color: var(--ok); } .out { color: var(--bad); }
+  .scores { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .scores b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Motorcycle search</h1>
+
+  <form id="form" class="row">
+    <input id="q" type="text" dir="auto" required autofocus
+           placeholder="Describe what you want, or type a model name" aria-label="Search text">
+    <button id="go" type="submit">Search</button>
+  </form>
+
+  <div class="filters">
+    <label>Max price (toman) <input id="max_price" type="number" min="0" step="1000000" placeholder="no limit"></label>
+    <label><input id="in_stock" type="checkbox" checked> In stock only</label>
+    <label><input id="beginner" type="checkbox"> Beginner friendly</label>
+    <label><input id="debug" type="checkbox"> Show scores</label>
+  </div>
+
+  <div id="status" role="status">Type a search above and press Search.</div>
+  <div id="results"></div>
+</main>
+
+<script>
+const form = document.getElementById("form");
+const statusEl = document.getElementById("status");
+const resultsEl = document.getElementById("results");
+const goBtn = document.getElementById("go");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const params = new URLSearchParams({
+    q: document.getElementById("q").value.trim(),
+    in_stock: document.getElementById("in_stock").checked,
+    beginner_only: document.getElementById("beginner").checked,
+    size: 5,
+    debug: document.getElementById("debug").checked,
+  });
+  const maxPrice = document.getElementById("max_price").value;
+  if (maxPrice) params.set("max_price", maxPrice);
+
+  goBtn.disabled = true;
+  statusEl.className = "";
+  statusEl.textContent = "Searching...";
+  resultsEl.textContent = "";
+
+  try {
+    const res = await fetch("/search?" + params);
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    const data = await res.json();
+    render(data.results);
+  } catch (err) {
+    statusEl.className = "error";
+    statusEl.textContent = "Search failed: " + err.message + ". Check that the server is running and try again.";
+  } finally {
+    goBtn.disabled = false;
+  }
+});
+
+function render(items) {
+  if (!items.length) {
+    statusEl.textContent = "No motorcycles matched. Try different words or remove a filter.";
+    return;
+  }
+  statusEl.textContent = items.length + " result" + (items.length > 1 ? "s" : "") + " found.";
+  for (const it of items) {
+    const card = document.createElement("div");
+    card.className = "item";
+
+    const title = document.createElement("h2");
+    title.textContent = (it.brand_en || "") + " " + (it.model || "");
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const price = document.createElement("span");
+    price.className = "price";
+    price.textContent = Number(it.price_toman).toLocaleString("en-US") + " toman";
+
+    const stock = document.createElement("span");
+    const inStock = it.stock >= 1;
+    stock.className = inStock ? "in" : "out";
+    stock.textContent = inStock ? "In stock: " + it.stock : "Out of stock";
+
+    meta.append(price, stock);
+    card.append(title, meta);
+
+    if (it.debug) {
+      const sc = document.createElement("div");
+      sc.className = "scores";
+      const parts = [
+        ["Final", it.score], ["Keyword", it.debug.bm25],
+        ["Vector", it.debug.vector], ["Found by", it.debug.source],
+      ];
+      for (const [label, val] of parts) {
+        const span = document.createElement("span");
+        const b = document.createElement("b");
+        b.textContent = typeof val === "number" ? val.toFixed(3) : val;
+        span.append(label + ": ", b);
+        sc.append(span);
+      }
+      card.append(sc);
+    }
+    resultsEl.append(card);
+  }
+}
+</script>
+</body>
+</html>

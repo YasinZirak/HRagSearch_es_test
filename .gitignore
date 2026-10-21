@@ -1,0 +1,7 @@
+venv/
+es.tar
+*.tar
+.venv/
+__pycache__/
+.env
+*.py[cod]
